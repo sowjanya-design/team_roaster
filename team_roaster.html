@@ -31,6 +31,30 @@
     --shadow-lg: 0 24px 60px -22px rgba(20,22,28,.40);
   }
 
+  html[data-theme="dark"] {
+    --canvas: #14161C;
+    --surface: #1C1F27;
+    --surface-2: #23262F;
+    --ink: #ECEEF3;
+    --ink-2: #B4B9C6;
+    --ink-3: #7E8493;
+    --line: #2E323D;
+    --line-2: #272A33;
+    --brass: #CFA24D;
+    --brass-soft: #3A331E;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+    --shadow-lg: 0 24px 60px -22px rgba(0,0,0,.8);
+  }
+  /* dark-mode: elements that use --ink as a solid background need an accent instead */
+  html[data-theme="dark"] .btn.primary { background: var(--brass); border-color: var(--brass); color: #14161C; }
+  html[data-theme="dark"] .btn.primary:hover { background: #DDB05E; }
+  html[data-theme="dark"] .vchip.active { background: var(--brass); border-color: var(--brass); color: #14161C; }
+  html[data-theme="dark"] .vchip.active .vcount { background: rgba(0,0,0,.22); color: #14161C; }
+  html[data-theme="dark"] .identity .idwrap.adminMode { background: var(--brass); border-color: var(--brass); }
+  html[data-theme="dark"] .identity .idwrap.adminMode select { color: #14161C; }
+  html[data-theme="dark"] .badge.admin { color: #14161C; }
+  html[data-theme="dark"] .badge.emp { background: #3A3F4B; }
+
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
   body {
@@ -247,10 +271,51 @@
     .topbar { flex-wrap: wrap; }
     .ventureFilter { order: 3; width: 100%; }
   }
+  /* ---------- Theme toggle ---------- */
+  .icon-btn {
+    width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--surface); color: var(--ink-2); display: grid; place-items: center;
+    transition: .14s; flex: 0 0 auto;
+  }
+  .icon-btn:hover { border-color: var(--ink-3); color: var(--ink); }
+
+  /* ---------- Toasts ---------- */
+  .toast-wrap { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
+    display: flex; flex-direction: column; gap: 10px; z-index: 80; align-items: center; }
+  .toast {
+    background: var(--ink); color: #fff; border-radius: 11px; padding: 11px 14px;
+    box-shadow: var(--shadow-lg); display: flex; align-items: center; gap: 14px;
+    font-size: 13.5px; font-weight: 500; min-width: 260px; max-width: 92vw;
+    animation: toastIn .22s cubic-bezier(.2,.8,.3,1);
+  }
+  html[data-theme="dark"] .toast { background: #2C303B; box-shadow: var(--shadow-lg), inset 0 0 0 1px var(--line); }
+  .toast.leaving { animation: toastOut .2s ease forwards; }
+  .toast .t-msg { flex: 1; }
+  .toast .t-act { background: none; border: none; color: var(--brass); font-weight: 700;
+    font-size: 13px; padding: 2px 4px; letter-spacing: .02em; }
+  .toast .t-act:hover { text-decoration: underline; }
+  @keyframes toastIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes toastOut { to { opacity: 0; transform: translateY(12px); } }
+
+  /* ---------- Subtasks (modal + card) ---------- */
+  .subwrap { display: flex; flex-direction: column; gap: 7px; }
+  .subrow { display: flex; align-items: center; gap: 9px; }
+  .subrow input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--brass); flex: 0 0 auto; cursor: pointer; }
+  .subrow input[type="text"] { flex: 1; }
+  .subrow .sub-del { border: none; background: none; color: var(--ink-3); font-size: 17px; line-height: 1; padding: 4px 6px; border-radius: 6px; }
+  .subrow .sub-del:hover { color: var(--p-high); background: var(--line-2); }
+  .sub-add { border: 1px dashed var(--line); background: var(--surface-2); color: var(--ink-2);
+    border-radius: 8px; padding: 8px; font-size: 12.5px; font-weight: 600; margin-top: 2px; }
+  .sub-add:hover { border-color: var(--ink-3); color: var(--ink); }
+  .card .subprog { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--ink-3); font-weight: 600; margin-top: 9px; }
+  .card .subprog .sp-bar { width: 64px; height: 5px; background: var(--line-2); border-radius: 999px; overflow: hidden; }
+  .card .subprog .sp-bar > span { display: block; height: 100%; background: #2E9E78; border-radius: 999px; }
+
   .hidden { display: none !important; }
 </style>
 </head>
 <body>
+<div class="toast-wrap" id="toastWrap"></div>
 
 <div class="app">
   <div class="topbar">
@@ -263,6 +328,7 @@
     </div>
     <div class="spacer"></div>
     <div class="ventureFilter" id="ventureFilter"></div>
+    <button class="icon-btn" id="themeToggle" title="Toggle theme" onclick="toggleTheme()" aria-label="Toggle dark mode"></button>
     <div class="identity">
       <span class="lbl">Acting as</span>
       <div class="idwrap" id="idwrap">
@@ -289,7 +355,14 @@
         <input id="taskSearch" placeholder="Search tasks…" oninput="setSearch(this.value)" />
       </div>
       <select id="assigneeFilter" class="bt-select" onchange="setAssigneeFilter(this.value)"></select>
+      <select id="sortSelect" class="bt-select" onchange="setSort(this.value)" title="Sort cards">
+        <option value="manual">Sort: Default</option>
+        <option value="priority">Sort: Priority</option>
+        <option value="due">Sort: Due date</option>
+        <option value="title">Sort: Title A–Z</option>
+      </select>
       <button class="bt-toggle" id="overdueToggle" onclick="toggleOverdue()">⚑ Overdue only</button>
+      <button class="bt-toggle" id="exportTasksBtn" onclick="exportTasksCSV()" title="Export visible tasks to CSV">↓ Export CSV</button>
       <span class="bt-clear hidden" id="btClear" onclick="clearBoardFilters()">Clear filters</span>
     </div>
     <div class="board" id="board"></div>
@@ -311,6 +384,8 @@
     <div class="section-head">
       <h2 id="rosterTitle">Weekly Roster</h2>
       <span class="sub" id="rosterSub"></span>
+      <span class="spacer"></span>
+      <button class="btn" onclick="exportRosterCSV()">↓ Export CSV</button>
     </div>
     <div class="roster-wrap">
       <table class="roster" id="rosterTable"></table>
@@ -349,6 +424,10 @@
     </div>
     <div class="field"><label>Notes <span style="font-weight:400;color:var(--ink-3)">(optional)</span></label>
       <input id="tk_notes" placeholder="Any detail or instruction for this task" /></div>
+    <div class="field"><label>Checklist <span style="font-weight:400;color:var(--ink-3)">(optional)</span></label>
+      <div class="subwrap" id="tk_subwrap"></div>
+      <button type="button" class="sub-add" onclick="addSubtaskRow()">+ Add checklist item</button>
+    </div>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal('taskOverlay')">Cancel</button>
       <button class="btn primary" onclick="saveTask()">Save</button>
@@ -434,8 +513,73 @@ let editingPersonId = null;
 let searchQ = "";
 let assigneeFilter = "all";
 let overdueOnly = false;
+let sortBy = "manual";
+let theme = "light";
 
 const role = () => currentUser === "admin" ? "admin" : "employee";
+
+/* ---------------- Theme ---------------- */
+function applyTheme(){
+  document.documentElement.setAttribute("data-theme", theme);
+  const btn = $("themeToggle");
+  if (btn) btn.innerHTML = theme==="dark"
+    ? `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/></svg>`
+    : `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>`;
+}
+function toggleTheme(){
+  theme = theme==="dark" ? "light" : "dark";
+  try { localStorage.setItem("roster:theme", theme); } catch (_) {}
+  applyTheme();
+}
+
+/* ---------------- Toasts ---------------- */
+function toast(msg, opts={}){
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.innerHTML = `<span class="t-msg">${esc(msg)}</span>` +
+    (opts.actionLabel ? `<button class="t-act">${esc(opts.actionLabel)}</button>` : "");
+  $("toastWrap").appendChild(el);
+  let removed = false;
+  const remove = ()=>{ if(removed) return; removed=true; el.classList.add("leaving"); setTimeout(()=>el.remove(), 200); };
+  if (opts.actionLabel && opts.onAction){
+    el.querySelector(".t-act").addEventListener("click", ()=>{ opts.onAction(); remove(); });
+  }
+  setTimeout(remove, opts.duration || 4500);
+}
+
+/* ---------------- CSV export ---------------- */
+function downloadCSV(filename, rows){
+  const csv = rows.map(r => r.map(cell => {
+    const s = (cell==null ? "" : String(cell));
+    return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s;
+  }).join(",")).join("\r\n");
+  const blob = new Blob(["﻿"+csv], { type:"text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
+function exportTasksCSV(){
+  const ts = boardTasks();
+  const rows = [["Title","Venture","Assignee","Priority","Due","Status","Checklist","Notes"]];
+  ts.forEach(t=>{
+    const p = personById(t.assignee); const subs = t.subtasks||[];
+    rows.push([ t.title, vMap[t.venture]?.name||"", p?p.name:"Unassigned", PRIO[t.priority].l,
+      t.due||"", STATUS_LABEL[t.status], subs.length?`${subs.filter(s=>s.done).length}/${subs.length}`:"", t.notes||"" ]);
+  });
+  downloadCSV("tasks.csv", rows);
+  toast(`Exported ${ts.length} task(s) to tasks.csv`);
+}
+function exportRosterCSV(){
+  const people = visiblePeople();
+  const rows = [["Member","Role", ...DAYS]];
+  people.forEach(p=>{
+    const sch = state.schedule[p.id] || DAYS.map(()=>"work");
+    rows.push([ p.name, p.role, ...sch.map(s=>SHIFT_LABEL[s]) ]);
+  });
+  downloadCSV("roster.csv", rows);
+  toast(`Exported roster for ${people.length} member(s)`);
+}
 
 const STORE_KEY = "roster:state2";
 async function load() {
@@ -489,8 +633,18 @@ function boardTasks(){
     const q = searchQ.trim().toLowerCase();
     if (q) ts = ts.filter(t => (t.title + " " + (t.notes||"")).toLowerCase().includes(q));
   }
-  return ts;
+  return sortTasks(ts);
 }
+const PRIO_RANK = { high:0, med:1, low:2 };
+function sortTasks(ts){
+  if (sortBy==="manual") return ts;
+  const arr = ts.slice();
+  if (sortBy==="priority") arr.sort((a,b)=> PRIO_RANK[a.priority]-PRIO_RANK[b.priority]);
+  else if (sortBy==="due") arr.sort((a,b)=> (a.due||"9999-99-99").localeCompare(b.due||"9999-99-99"));
+  else if (sortBy==="title") arr.sort((a,b)=> a.title.localeCompare(b.title));
+  return arr;
+}
+function setSort(v){ sortBy=v; renderBoard(); }
 
 /* ---------------- Identity ---------------- */
 function renderIdentity(){
@@ -593,6 +747,7 @@ function renderBoardTools(){
   $("assigneeFilter").innerHTML = `<option value="all">Everyone</option>` +
     people.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join("");
   $("assigneeFilter").value = assigneeFilter;
+  $("sortSelect").value = sortBy;
   $("taskSearch").value = searchQ;
   $("overdueToggle").classList.toggle("on", overdueOnly);
   refreshClearBtn();
@@ -628,6 +783,10 @@ function cardHTML(t, isAdmin){
   const v = vMap[t.venture]; const p = personById(t.assignee);
   const pr = PRIO[t.priority]; const over = t.status!=="done" && isOverdue(t.due);
   const back = PREV_STATUS[t.status], fwd = NEXT_STATUS[t.status];
+  const subs = t.subtasks||[]; const subDone = subs.filter(s=>s.done).length;
+  const subProg = subs.length
+    ? `<div class="subprog">✓ ${subDone}/${subs.length}<span class="sp-bar"><span style="width:${Math.round(subDone/subs.length*100)}%"></span></span></div>`
+    : "";
   // employee gets quick-move buttons; admin relies on drag + edit
   const moveBar = !isAdmin ? `
     <div class="movebar">
@@ -651,6 +810,7 @@ function cardHTML(t, isAdmin){
         <span class="vpill" style="background:${v.color}">${v.name}</span>
         <span class="prio"><span class="pdot" style="background:${pr.c}"></span>${pr.l}</span>
       </div>
+      ${subProg}
       <div class="who">${whoLine}</div>
       ${moveBar}
     </div>`;
@@ -743,6 +903,26 @@ function cycleShift(pid, di){
   save(); renderRoster();
 }
 
+/* ---------------- Subtasks editor ---------------- */
+function subRowHTML(text, done){
+  return `<div class="subrow">
+    <input type="checkbox" ${done?"checked":""} />
+    <input type="text" value="${esc(text)}" placeholder="Checklist item" />
+    <button type="button" class="sub-del" title="Remove" onclick="this.closest('.subrow').remove()">×</button>
+  </div>`;
+}
+function renderSubtasks(list){ $("tk_subwrap").innerHTML = (list||[]).map(s=>subRowHTML(s.text, s.done)).join(""); }
+function addSubtaskRow(text="", done=false){
+  $("tk_subwrap").insertAdjacentHTML("beforeend", subRowHTML(text, done));
+  if (!text){ const rows=$("tk_subwrap").querySelectorAll(".subrow"); rows[rows.length-1].querySelector('input[type="text"]').focus(); }
+}
+function readSubtasks(){
+  return Array.from($("tk_subwrap").querySelectorAll(".subrow")).map(r=>({
+    text: r.querySelector('input[type="text"]').value.trim(),
+    done: r.querySelector('input[type="checkbox"]').checked,
+  })).filter(s=>s.text);
+}
+
 /* ---------------- Modals (admin) ---------------- */
 function fillVentureSelect(sel){ sel.innerHTML = VENTURES.map(v=>`<option value="${v.id}">${v.name}</option>`).join(""); }
 function fillAssigneeSelect(sel, ventureId){
@@ -768,6 +948,7 @@ function openTaskModal(id){
     $("tk_title").value=t.title; $("tk_assignee").value=t.assignee||"";
     $("tk_priority").value=t.priority; $("tk_due").value=t.due||""; $("tk_status").value=t.status;
     $("tk_notes").value=t.notes||"";
+    renderSubtasks(t.subtasks);
   } else {
     const ven = filter!=="all" ? filter : VENTURES[0].id;
     $("tk_venture").value = ven;
@@ -775,6 +956,7 @@ function openTaskModal(id){
     $("tk_title").value=""; $("tk_assignee").value="";
     $("tk_priority").value="med"; $("tk_due").value=""; $("tk_status").value="todo";
     $("tk_notes").value="";
+    renderSubtasks([]);
   }
   $("taskOverlay").classList.remove("hidden");
   setTimeout(()=>$("tk_title").focus(), 30);
@@ -784,12 +966,23 @@ function saveTask(){
   if(!title){ $("tk_title").focus(); return; }
   const data = { title, assignee:$("tk_assignee").value, venture:$("tk_venture").value,
     priority:$("tk_priority").value, due:$("tk_due").value, status:$("tk_status").value,
-    notes:$("tk_notes").value.trim() };
-  if (editingTaskId){ Object.assign(state.tasks.find(t=>t.id===editingTaskId), data); }
+    notes:$("tk_notes").value.trim(), subtasks:readSubtasks() };
+  const editing = !!editingTaskId;
+  if (editing){ Object.assign(state.tasks.find(t=>t.id===editingTaskId), data); }
   else { state.tasks.unshift({ id:uid("t"), ...data }); }
   save(); closeModal("taskOverlay"); renderAll();
+  toast(editing ? "Task updated" : "Task created");
 }
-function deleteTask(id){ state.tasks = state.tasks.filter(t=>t.id!==id); save(); renderAll(); }
+function deleteTask(id){
+  const idx = state.tasks.findIndex(t=>t.id===id);
+  if (idx<0) return;
+  const removed = state.tasks[idx];
+  state.tasks.splice(idx,1); save(); renderAll();
+  const short = removed.title.length>40 ? removed.title.slice(0,40)+"…" : removed.title;
+  toast(`Deleted “${short}”`, { actionLabel:"Undo", onAction:()=>{
+    state.tasks.splice(Math.min(idx, state.tasks.length), 0, removed); save(); renderAll(); toast("Task restored");
+  }});
+}
 
 function openPersonModal(id){
   editingPersonId = id || null;
@@ -846,7 +1039,11 @@ function renderAll(){
 document.querySelectorAll(".overlay").forEach(o=> o.addEventListener("click", e=>{ if(e.target===o) o.classList.add("hidden"); }));
 document.addEventListener("keydown", e=>{ if(e.key==="Escape") document.querySelectorAll(".overlay").forEach(o=>o.classList.add("hidden")); });
 
-(async function init(){ await load(); renderAll(); })();
+(async function init(){
+  try { theme = localStorage.getItem("roster:theme") || "light"; } catch (_) {}
+  applyTheme();
+  await load(); renderAll();
+})();
 </script>
 </body>
 </html>
