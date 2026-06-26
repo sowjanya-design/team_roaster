@@ -403,6 +403,18 @@
   </section>
 </div>
 
+<!-- Access gate (shown only when a passcode is set) -->
+<div class="overlay hidden no-dismiss" id="gateOverlay" style="z-index:90">
+  <div class="modal" style="max-width:380px; text-align:center">
+    <div style="font-size:30px; margin-bottom:6px">🔒</div>
+    <h3 style="text-align:center; margin:0 0 8px">Team access</h3>
+    <p style="color:var(--ink-3); font-size:13px; margin:0 0 18px">Enter the team passcode to open the board.</p>
+    <div class="field"><input id="gateCode" type="password" placeholder="Passcode" onkeydown="if(event.key==='Enter')submitGate()" /></div>
+    <div id="gateError" style="color:var(--p-high); font-size:12.5px; min-height:16px; margin-bottom:6px"></div>
+    <button class="btn primary" style="width:100%; justify-content:center" onclick="submitGate()">Unlock</button>
+  </div>
+</div>
+
 <!-- Task modal -->
 <div class="overlay hidden" id="taskOverlay">
   <div class="modal">
@@ -597,6 +609,11 @@ const STORE_KEY = "roster:state2";
 const SUPABASE_URL      = "";   // e.g. "https://abcdxyz.supabase.co"
 const SUPABASE_ANON_KEY = "";   // the project's public anon key
 const ROW_ID = "singleton";     // the single shared roster row
+
+/* Optional shared passcode. Set a value to require it before the board opens.
+   Leave blank for open access. Note: this is a front-end deterrent, not strong
+   security — the code lives in the page source. Use Supabase Auth for real logins. */
+const ACCESS_CODE = "";
 
 const SUPA = (window.supabase && SUPABASE_URL && SUPABASE_ANON_KEY)
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
@@ -1115,13 +1132,30 @@ function renderAll(){
   renderStats(); renderBoardTools(); renderBoard(); renderTeam(); renderRoster();
 }
 
-document.querySelectorAll(".overlay").forEach(o=> o.addEventListener("click", e=>{ if(e.target===o) o.classList.add("hidden"); }));
-document.addEventListener("keydown", e=>{ if(e.key==="Escape") document.querySelectorAll(".overlay").forEach(o=>o.classList.add("hidden")); });
+// Dismissable overlays close on backdrop click / Escape — the access gate (.no-dismiss) does not.
+document.querySelectorAll(".overlay:not(.no-dismiss)").forEach(o=> o.addEventListener("click", e=>{ if(e.target===o) o.classList.add("hidden"); }));
+document.addEventListener("keydown", e=>{ if(e.key==="Escape") document.querySelectorAll(".overlay:not(.no-dismiss)").forEach(o=>o.classList.add("hidden")); });
+
+/* ---------------- Access gate ---------------- */
+const GATE_KEY = "roster:unlocked";
+function gateOk(){ try { return !ACCESS_CODE || localStorage.getItem(GATE_KEY) === ACCESS_CODE; } catch (_) { return !ACCESS_CODE; } }
+function submitGate(){
+  if ($("gateCode").value === ACCESS_CODE){
+    try { localStorage.setItem(GATE_KEY, ACCESS_CODE); } catch (_) {}
+    $("gateOverlay").classList.add("hidden");
+    bootApp();
+  } else {
+    $("gateError").textContent = "Incorrect passcode. Try again.";
+    $("gateCode").select();
+  }
+}
+async function bootApp(){ await load(); renderAll(); }
 
 (async function init(){
   try { theme = localStorage.getItem("roster:theme") || "light"; } catch (_) {}
   applyTheme();
-  await load(); renderAll();
+  if (gateOk()) { bootApp(); }
+  else { $("gateOverlay").classList.remove("hidden"); setTimeout(()=>$("gateCode").focus(), 40); }
 })();
 </script>
 </body>
