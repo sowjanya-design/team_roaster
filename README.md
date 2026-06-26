@@ -17,6 +17,20 @@ A single-file, dependency-free web app for managing work across multiple venture
 
 Just open `index.html` (or `team_roaster.html`) in a browser. All data is stored locally in your browser.
 
-## Hosting
+## Hosting (Vercel)
 
-The app works as-is on any static host. On GitHub Pages, enable Pages for the repository and it will serve `index.html` at the root.
+The app is a static site — no build step. To deploy on Vercel:
+
+1. Go to <https://vercel.com> → **Add New → Project** → import this GitHub repo.
+2. Framework preset: **Other** (no build command, output is the repo root).
+3. Deploy. Vercel gives you a live HTTPS URL and redeploys on every push.
+
+It also works on GitHub Pages or any static host.
+
+## Shared board for the team
+
+By default data is stored per-browser (`localStorage`), so each person sees their
+own copy. To put the whole team on **one shared, live-syncing board with no login**,
+follow [`SUPABASE_SETUP.md`](SUPABASE_SETUP.md) — about 5 minutes, free, and well
+within Supabase's free tier for a small team. The top-bar pill shows whether you're
+in **Local** or **Shared** mode.

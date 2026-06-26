@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;450;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 <style>
   :root {
@@ -278,6 +279,9 @@
     transition: .14s; flex: 0 0 auto;
   }
   .icon-btn:hover { border-color: var(--ink-3); color: var(--ink); }
+  .sync-pill { font-size: 11px; font-weight: 700; letter-spacing: .04em; color: var(--ink-3);
+    border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; background: var(--surface);
+    white-space: nowrap; cursor: default; }
 
   /* ---------- Toasts ---------- */
   .toast-wrap { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
@@ -328,6 +332,7 @@
     </div>
     <div class="spacer"></div>
     <div class="ventureFilter" id="ventureFilter"></div>
+    <span class="sync-pill" id="syncPill" title="">● Local</span>
     <button class="icon-btn" id="themeToggle" title="Toggle theme" onclick="toggleTheme()" aria-label="Toggle dark mode"></button>
     <div class="identity">
       <span class="lbl">Acting as</span>
@@ -582,28 +587,102 @@ function exportRosterCSV(){
 }
 
 const STORE_KEY = "roster:state2";
+
+/* ============================================================
+   Shared backend config (Supabase) — no login, one shared board.
+   Paste your project values below to switch the whole team onto a
+   shared, live-syncing board. Leave blank to run purely on this
+   browser's localStorage. The anon key is safe to ship publicly.
+   ============================================================ */
+const SUPABASE_URL      = "";   // e.g. "https://abcdxyz.supabase.co"
+const SUPABASE_ANON_KEY = "";   // the project's public anon key
+const ROW_ID = "singleton";     // the single shared roster row
+
+const SUPA = (window.supabase && SUPABASE_URL && SUPABASE_ANON_KEY)
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
+let justSaved = false;          // suppress the realtime echo of our own write
+
+function setSyncStatus(mode){
+  const pill = $("syncPill");
+  if (!pill) return;
+  const map = {
+    shared: ["● Shared", "Live shared board — everyone sees the same data", "#2E9E78"],
+    local:  ["● Local",  "Local mode — data stays in this browser only",    "#888D9A"],
+    error:  ["● Offline","Couldn't reach the shared board — using local copy","#C0392B"],
+  };
+  const [label, title, color] = map[mode] || map.local;
+  pill.textContent = label; pill.title = title; pill.style.color = color;
+}
+
+function saveLocal(){
+  const payload = JSON.stringify(state);
+  try {
+    if (window.storage && typeof window.storage.set === "function") window.storage.set(STORE_KEY, payload);
+    else localStorage.setItem(STORE_KEY, payload);
+  } catch (_) {}
+}
+function loadLocal(){
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (_) {}
+  return null;
+}
+
+async function pushRemote(){
+  if (!SUPA) return;
+  justSaved = true;
+  try { await SUPA.from("roster").upsert({ id: ROW_ID, data: state, updated_at: new Date().toISOString() }); }
+  catch (e) { console.warn("Supabase save failed:", e); setSyncStatus("error"); }
+  setTimeout(()=>{ justSaved = false; }, 600);
+}
+
+function subscribeRealtime(){
+  if (!SUPA) return;
+  SUPA.channel("roster-sync")
+    .on("postgres_changes", { event:"*", schema:"public", table:"roster", filter:`id=eq.${ROW_ID}` }, (payload)=>{
+      if (justSaved) return;                       // ignore the echo of our own write
+      const incoming = payload.new && payload.new.data;
+      if (!incoming) return;
+      const modalOpen = Array.from(document.querySelectorAll(".overlay")).some(o=>!o.classList.contains("hidden"));
+      if (modalOpen) return;                        // don't disrupt someone mid-edit
+      state = incoming; saveLocal(); renderAll();
+    })
+    .subscribe();
+}
+
 async function load() {
-  // Prefer host-provided storage when available, fall back to localStorage.
+  if (SUPA){
+    try {
+      const { data, error } = await SUPA.from("roster").select("data").eq("id", ROW_ID).maybeSingle();
+      if (error) throw error;
+      if (data && data.data) { state = data.data; }
+      else { state = seed(); await pushRemote(); }   // first run: seed the shared row
+      subscribeRealtime();
+      setSyncStatus("shared");
+      return;
+    } catch (e) {
+      console.warn("Supabase load failed, falling back to local:", e);
+      setSyncStatus("error");
+    }
+  } else {
+    setSyncStatus("local");
+  }
+  // Local fallback (also used before Supabase is configured)
   try {
     if (window.storage && typeof window.storage.get === "function") {
       const r = await window.storage.get(STORE_KEY);
       if (r && r.value) state = JSON.parse(r.value);
     } else {
-      const raw = localStorage.getItem(STORE_KEY);
-      if (raw) state = JSON.parse(raw);
+      state = loadLocal();
     }
   } catch (_) {}
   if (!state) state = seed();
 }
 async function save() {
-  const payload = JSON.stringify(state);
-  try {
-    if (window.storage && typeof window.storage.set === "function") {
-      await window.storage.set(STORE_KEY, payload);
-    } else {
-      localStorage.setItem(STORE_KEY, payload);
-    }
-  } catch (_) {}
+  saveLocal();          // keep a local cache regardless
+  await pushRemote();   // and sync to the shared board if configured
 }
 
 /* ---------------- Helpers ---------------- */
